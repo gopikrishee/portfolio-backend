@@ -37,10 +37,10 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-app.MapGet("/orders", async (AppDbContext db) =>
+app.MapGet("/users", async (AppDbContext db) =>
 {
-    return await db.Orders.ToListAsync();
+    return await db.Users.ToListAsync();
 })
-.WithName("GetOrders");
+.WithName("GetUsers");
 
 app.Run();
