@@ -6,24 +6,37 @@ var builder = WebApplication.CreateBuilder(args);
 // Configure DbContext with connection string handling
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
-    var connStringBuilder = new NpgsqlConnectionStringBuilder();
-    string? dbUrl = builder.Configuration.GetConnectionString("CockroachDb");
-    
-    if (string.IsNullOrEmpty(dbUrl))
+    var connUrl = Environment.GetEnvironmentVariable("COCKROACHDB_URL") 
+        ?? Environment.GetEnvironmentVariable("COCKROACHDB_URL", EnvironmentVariableTarget.User)
+        ?? builder.Configuration.GetConnectionString("CockroachDb");
+
+    if (string.IsNullOrEmpty(connUrl))
     {
-        options.UseNpgsql(builder.Configuration.GetConnectionString("CockroachDb"));
+        throw new InvalidOperationException("Connection string 'CockroachDb' not found and 'COCKROACHDB_URL' environment variable is not set.");
+    }
+
+    string finalConnectionString;
+    if (connUrl.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+    {
+        var uri = new Uri(connUrl);
+        var userInfo = uri.UserInfo.Split(':');
+        var builder = new NpgsqlConnectionStringBuilder
+        {
+            Host = uri.Host,
+            Port = uri.Port,
+            Username = userInfo[0],
+            Password = userInfo.Length > 1 ? userInfo[1] : string.Empty,
+            Database = uri.AbsolutePath.TrimStart('/'),
+            SslMode = SslMode.VerifyFull
+        };
+        finalConnectionString = builder.ConnectionString;
     }
     else
     {
-        var uri = new Uri(dbUrl);
-        connStringBuilder.Host = uri.Host;
-        connStringBuilder.Port = uri.Port;
-        var userInfo = uri.UserInfo.Split(':');
-        connStringBuilder.Username = userInfo[0];
-        connStringBuilder.Password = userInfo[1];
-        connStringBuilder.Database = uri.AbsolutePath.TrimStart('/');
-        options.UseNpgsql(connStringBuilder.ConnectionString);
+        finalConnectionString = connUrl;
     }
+
+    options.UseNpgsql(finalConnectionString);
 });
 
 builder.Services.AddOpenApi();
