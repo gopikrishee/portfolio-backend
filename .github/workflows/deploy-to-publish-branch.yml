@@ -10,10 +10,8 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Checkout main
+      - name: Checkout and Build
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Git
         run: |
@@ -22,23 +20,26 @@ jobs:
 
       - name: Deploy to Publish Branch
         run: |
-          # Ensure local copy of remote branches
-          git fetch origin
+          # Create a temp directory for the artifacts to avoid polluting main
+          mkdir ../artifacts
+          cp -r bin/Publish/* ../artifacts/
 
-          # Check if publish branch exists
+          # Fetch and checkout publish branch in a new worktree or just switch
+          # Since we have the repo checked out, we can switch branches.
+          # To ensure we don't affect main, we will verify we are on the publish branch before any deletions.
+          git fetch origin
           if git ls-remote --exit-code --heads origin publish; then
             git checkout publish
           else
             git checkout -b publish
           fi
 
-          # Copy files from bin/Publish to root (preserving structure)
-          # We must ensure we are back on the target branch before copying
-          cp -r bin/Publish/* .
-          
-          # Remove the bin, obj, and .github directories to clean up
-          rm -rf bin obj .github
+          # Delete all files in the current branch
+          git rm -rf .
 
+          # Move files from temp to root
+          cp -r ../artifacts/* .
+          
           # Commit and push
           git add .
           git commit -m "Deploy build artifacts to publish branch"
