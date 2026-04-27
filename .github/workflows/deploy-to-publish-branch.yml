@@ -20,13 +20,12 @@ jobs:
 
       - name: Deploy to Publish Branch
         run: |
-          # Create a temp directory for the artifacts to avoid polluting main
-          mkdir ../artifacts
-          cp -r bin/Publish/* ../artifacts/
+          # 1. Identify the artifact location while on main
+          # Use a temp directory outside the repo workspace
+          ARTIFACT_DIR=$(mktemp -d)
+          cp -r bin/Publish/* "$ARTIFACT_DIR/"
 
-          # Fetch and checkout publish branch in a new worktree or just switch
-          # Since we have the repo checked out, we can switch branches.
-          # To ensure we don't affect main, we will verify we are on the publish branch before any deletions.
+          # 2. Switch to publish branch
           git fetch origin
           if git ls-remote --exit-code --heads origin publish; then
             git checkout publish
@@ -34,13 +33,11 @@ jobs:
             git checkout -b publish
           fi
 
-          # Delete all files in the current branch
+          # 3. Clean and deploy
           git rm -rf .
-
-          # Move files from temp to root
-          cp -r ../artifacts/* .
+          cp -r "$ARTIFACT_DIR"/* .
           
-          # Commit and push
+          # 4. Commit and push
           git add .
           git commit -m "Deploy build artifacts to publish branch"
           git push origin publish
