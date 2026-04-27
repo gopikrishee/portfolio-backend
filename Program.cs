@@ -56,4 +56,10 @@ app.MapGet("/users", async (AppDbContext db) =>
 })
 .WithName("GetUsers");
 
+app.MapGet("/sample", async (AppDbContext db) =>
+{
+    return "Sample endpoint";
+})
+.WithName("Sample");
+
 app.Run();
