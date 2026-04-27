@@ -15,7 +15,6 @@ jobs:
         with:
           project-url: https://github.com/users/gopikrishee/projects/2
           github-token: ${{ secrets.PROJECT_TOKEN }}
-          issue-url: ${{ github.event.issue.html_url }}
 
       - name: Assign to gopikrishee
         uses: actions/github-script@v7
