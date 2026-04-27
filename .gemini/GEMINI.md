@@ -112,3 +112,64 @@ MYPROFILE-BACKEND/
 ```
 
 ---
+
+## 2. Naming Conventions
+
+### Endpoint Routes
+```csharp
+// ✅ GOOD - RESTful, lowercase, plural nouns
+app.MapGroup("/api/users")
+app.MapGroup("/api/products")
+app.MapGroup("/api/orders")
+app.MapGroup("/api/categories")
+
+// ❌ BAD - Mixed case, verbs, singular
+app.MapGroup("/api/GetUsers")
+app.MapGroup("/api/User")
+app.MapGroup("/API/USERS")
+```
+
+### Handler Method Names
+```csharp
+// ✅ GOOD - Verb-Noun naming
+public static async Task<IResult> GetAllUsers() { }
+public static async Task<IResult> GetUserById() { }
+public static async Task<IResult> CreateUser() { }
+public static async Task<IResult> UpdateUser() { }
+public static async Task<IResult> DeleteUser() { }
+public static async Task<IResult> GetUsersByStatus() { }
+
+// ❌ BAD
+public static async Task<IResult> Users() { }
+public static async Task<IResult> UserDetails() { }
+public static async Task<IResult> MakeUser() { }
+```
+
+### Parameter Naming in Handlers
+```csharp
+// ✅ GOOD - Dependency injection is automatic
+private static async Task<IResult> GetUserById(
+    int id,                                  // Route parameter
+    string? searchTerm = null,              // Query parameter with default
+    IUserService userService = null!)       // Service injection
+{
+    // Implementation
+}
+
+// ✅ GOOD - Request body binding
+private static async Task<IResult> CreateUser(
+    CreateUserRequest request,              // Automatic body binding
+    IValidator<CreateUserRequest> validator = null!)
+{
+    // Implementation
+}
+
+// ❌ BAD - Confusing naming
+private static async Task<IResult> GetUserById(
+    int user_id,
+    string term,
+    IUserService svc)
+{
+}
+```
+---
