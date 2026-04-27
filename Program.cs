@@ -36,7 +36,9 @@ builder.Services.AddDbContext<AppDbContext>(options =>
         finalConnectionString = connUrl;
     }
 
-    options.UseNpgsql(finalConnectionString);
+    var dataSourceBuilder = new NpgsqlDataSourceBuilder(finalConnectionString);
+    dataSourceBuilder.EnableDynamicJson();
+    options.UseNpgsql(dataSourceBuilder.Build());
 });
 
 builder.Services.AddOpenApi();

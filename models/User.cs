@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 
 [Table("users", Schema = "public")]
 public class User
@@ -20,7 +21,35 @@ public class User
     [Column("bio"), MaxLength(500)]
     public string? Bio {get; set; }
 
-    [Column("designation"), MaxLength(255)]
-    public string? Designation { get; set; }
+    [Column("title"), MaxLength(255)]
+    public string? Title { get; set; }
 
+    [Column("location")]
+    public string? Location { get; set; }
+
+    [Column("skills")]
+    public List<string>? Skills { get; set; }
+
+    /// <summary>
+    /// Stored as JSONB in CockroachDB. 
+    /// EF Core 8+ and npgsql map this automatically to a class or list of classes.
+    /// </summary>
+    [Column("experience", TypeName = "jsonb")]
+    public List<UserExperience>? Experience { get; set; }
+
+}
+
+public class UserExperience
+{
+    [JsonPropertyName("company")]
+    public string Company { get; set; } = string.Empty;
+
+    [JsonPropertyName("role")]
+    public string Role { get; set; } = string.Empty;
+
+    [JsonPropertyName("active_years")]
+    public string ActiveYears { get; set; } = string.Empty;
+
+    [JsonPropertyName("current")]
+    public bool IsCurrent { get; set; }
 }
