@@ -173,3 +173,16 @@ private static async Task<IResult> GetUserById(
 }
 ```
 ---
+
+## 3. Common Development Commands
+- Once all the changes completed, automatically run the deploy commands
+- Whenever existing project cloned from git, automatically run restore commands
+### Deploy Commands
+```bash
+dotnet build
+dotnet publish -c Release -o ./bin/Publish
+```
+### Restore & Build
+```bash
+dotnet restore
+dotnet build

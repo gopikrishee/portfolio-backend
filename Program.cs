@@ -69,10 +69,10 @@ app.MapGet("/users", async (AppDbContext db) =>
 })
 .WithName("GetUsers");
 
-app.MapGet("/sample", async (AppDbContext db) =>
+app.MapGet("/blogslist", async (AppDbContext db) =>
 {
-    return "Sample endpoint";
+    return await db.Blogs.ToListAsync();
 })
-.WithName("Sample");
+.WithName("GetBlogsList");
 
 app.Run();
