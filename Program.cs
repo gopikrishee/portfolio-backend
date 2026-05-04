@@ -72,9 +72,9 @@ app.MapGet("/users", async (AppDbContext db) =>
 })
 .WithName("GetUsers");
 
-app.MapGet("/blogslist", async (myprofile_backend.Handlers.BlogHandler blogHandler) =>
+app.MapGet("/blogslist", async (myprofile_backend.Handlers.BlogHandler blogHandler, int pageNumber = 1, int pageSize = 10) =>
 {
-    return await blogHandler.HandleGetBlogsAsync();
+    return await blogHandler.HandleGetBlogsAsync(pageNumber, pageSize);
 })
 .WithName("GetBlogsList");
 

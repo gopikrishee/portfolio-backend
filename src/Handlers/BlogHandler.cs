@@ -12,9 +12,9 @@ namespace myprofile_backend.Handlers
             _blogService = blogService;
         }
 
-        public async Task<List<BlogDto>> HandleGetBlogsAsync()
+        public async Task<List<BlogDto>> HandleGetBlogsAsync(int pageNumber, int pageSize)
         {
-            return await _blogService.GetBlogsWithAuthorAsync();
+            return await _blogService.GetBlogsWithAuthorAsync(pageNumber, pageSize);
         }
     }
 }
