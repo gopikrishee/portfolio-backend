@@ -4,6 +4,6 @@ namespace myprofile_backend.Services
 {
     public interface IBlogService
     {
-        Task<List<BlogDto>> GetBlogsWithAuthorAsync();
+        Task<List<BlogDto>> GetBlogsWithAuthorAsync(int pageNumber, int pageSize);
     }
 }

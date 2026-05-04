@@ -13,10 +13,13 @@ namespace myprofile_backend.Services
             _context = context;
         }
 
-        public async Task<List<BlogDto>> GetBlogsWithAuthorAsync()
+        public async Task<List<BlogDto>> GetBlogsWithAuthorAsync(int pageNumber, int pageSize)
         {
             return await _context.Blogs
                 .Include(b => b.Author)
+                .OrderByDescending(b => b.CreatedAt)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
                 .Select(b => new BlogDto
                 {
                     Id = b.Id,
