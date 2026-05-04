@@ -41,6 +41,9 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(dataSourceBuilder.Build());
 });
 
+builder.Services.AddScoped<myprofile_backend.Services.IBlogService, myprofile_backend.Services.BlogService>();
+builder.Services.AddScoped<myprofile_backend.Handlers.BlogHandler>();
+
 builder.Services.AddOpenApi();
 
 builder.Services.AddCors(options =>
@@ -69,9 +72,9 @@ app.MapGet("/users", async (AppDbContext db) =>
 })
 .WithName("GetUsers");
 
-app.MapGet("/blogslist", async (AppDbContext db) =>
+app.MapGet("/blogslist", async (myprofile_backend.Handlers.BlogHandler blogHandler) =>
 {
-    return await db.Blogs.ToListAsync();
+    return await blogHandler.HandleGetBlogsAsync();
 })
 .WithName("GetBlogsList");
 
