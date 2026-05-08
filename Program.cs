@@ -68,7 +68,21 @@ app.UseCors();
 
 app.MapGet("/users", async (AppDbContext db) =>
 {
-    return await db.Users.ToListAsync();
+    var users = await db.Users
+        .Select(u => new myprofile_backend.Models.DTOs.UserDto
+        {
+            UserId = u.UserId,
+            UserName = u.UserName,
+            Email = u.Email,
+            AvatarUrl = u.AvatarUrl,
+            Bio = u.Bio,
+            Title = u.Title,
+            Location = u.Location,
+            Skills = u.Skills,
+            TotalBlogs = db.Blogs.Count(b => b.UserId == u.UserId)
+        })
+        .ToListAsync();
+    return users;
 })
 .WithName("GetUsers");
 
