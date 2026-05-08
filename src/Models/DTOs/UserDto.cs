@@ -1,3 +1,5 @@
+using myprofile_backend.Models.Entities;
+
 namespace myprofile_backend.Models.DTOs
 {
     public class UserDto
@@ -10,6 +12,7 @@ namespace myprofile_backend.Models.DTOs
         public string? Title { get; set; }
         public string? Location { get; set; }
         public List<string>? Skills { get; set; }
+        public List<UserExperience>? Experience { get; set; }
         public int TotalBlogs { get; set; }
     }
 }
