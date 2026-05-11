@@ -13,6 +13,7 @@ namespace myprofile_backend.Models.DTOs
         public string? Location { get; set; }
         public List<string>? Skills { get; set; }
         public List<UserExperience>? Experience { get; set; }
+        public bool IsAdmin {get; set; }
         public int TotalBlogs { get; set; }
     }
 }

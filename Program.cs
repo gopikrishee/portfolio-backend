@@ -80,6 +80,7 @@ app.MapGet("/users", async (AppDbContext db) =>
             Location = u.Location,
             Skills = u.Skills,
             Experience = u.Experience,
+            IsAdmin = u.IsAdmin,
             TotalBlogs = db.Blogs.Count(b => b.UserId == u.UserId)
         })
         .ToListAsync();

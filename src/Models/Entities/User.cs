@@ -39,6 +39,9 @@ namespace myprofile_backend.Models.Entities
         [Column("experience", TypeName = "jsonb")]
         public List<UserExperience>? Experience { get; set; }
 
+        [Column("is_admin")]
+        public bool IsAdmin { get; set; }
+
     }
 
     public class UserExperience
