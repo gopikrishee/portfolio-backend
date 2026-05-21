@@ -11,6 +11,8 @@ public class AppDbContext : DbContext
 
     public DbSet<Blog> Blogs { get; set; }
 
+    public DbSet<BlogContentBlock> BlogContentBlocks { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // Tell EF Core that the DB generates the UUID and Date automatically

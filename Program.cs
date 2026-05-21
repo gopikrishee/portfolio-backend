@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using myprofile_backend.Handlers;
+using myprofile_backend.Models.DTOs;
 using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -16,20 +18,23 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     }
 
     string finalConnectionString;
-    if (connUrl.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+    if (connUrl.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase) || connUrl.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase))
     {
         var uri = new Uri(connUrl);
         var userInfo = uri.UserInfo.Split(':');
-        var builder = new NpgsqlConnectionStringBuilder
+        var npgsqlBuilder = new NpgsqlConnectionStringBuilder
         {
             Host = uri.Host,
-            Port = uri.Port,
             Username = userInfo[0],
             Password = userInfo.Length > 1 ? userInfo[1] : string.Empty,
             Database = uri.AbsolutePath.TrimStart('/'),
             SslMode = SslMode.VerifyFull
         };
-        finalConnectionString = builder.ConnectionString;
+        if (uri.Port != -1)
+        {
+            npgsqlBuilder.Port = uri.Port;
+        }
+        finalConnectionString = npgsqlBuilder.ConnectionString;
     }
     else
     {
@@ -42,7 +47,9 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 });
 
 builder.Services.AddScoped<myprofile_backend.Services.IBlogService, myprofile_backend.Services.BlogService>();
+builder.Services.AddScoped<myprofile_backend.Services.IUserService, myprofile_backend.Services.UserService>();
 builder.Services.AddScoped<myprofile_backend.Handlers.BlogHandler>();
+builder.Services.AddScoped<myprofile_backend.Handlers.UserHandler>();
 
 builder.Services.AddOpenApi();
 
@@ -66,32 +73,31 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.UseCors();
 
-app.MapGet("/users", async (AppDbContext db) =>
+app.MapGet("/users", async (UserHandler userHandler) =>
 {
-    var users = await db.Users
-        .Select(u => new myprofile_backend.Models.DTOs.UserDto
-        {
-            UserId = u.UserId,
-            UserName = u.UserName,
-            Email = u.Email,
-            AvatarUrl = u.AvatarUrl,
-            Bio = u.Bio,
-            Title = u.Title,
-            Location = u.Location,
-            Skills = u.Skills,
-            Experience = u.Experience,
-            IsAdmin = u.IsAdmin,
-            TotalBlogs = db.Blogs.Count(b => b.UserId == u.UserId)
-        })
-        .ToListAsync();
-    return users;
+    return await userHandler.HandleGetUsersAsync();
 })
 .WithName("GetUsers");
 
-app.MapGet("/blogslist", async (myprofile_backend.Handlers.BlogHandler blogHandler, int pageNumber = 1, int pageSize = 10) =>
+app.MapGet("/blogslist", async (BlogHandler blogHandler, int pageNumber = 1, int pageSize = 10) =>
 {
     return await blogHandler.HandleGetBlogsAsync(pageNumber, pageSize);
 })
 .WithName("GetBlogsList");
+
+app.MapPost("/blogs", async (BlogHandler blogHandler, BlogDto blogDto) =>
+{
+    var createdBlog = await blogHandler.HandleCreateBlogAsync(blogDto);
+    return Results.Created($"/blogs/{createdBlog.Id}", createdBlog);
+})
+.WithName("CreateBlog");
+
+app.MapPost("/blogs/{blogId}/content", async (BlogHandler blogHandler, Guid blogId, BlogContentBlockDto contentBlockDto) =>
+{
+    contentBlockDto.BlogId = blogId;
+    var createdBlock = await blogHandler.HandleAddContentBlockAsync(contentBlockDto);
+    return Results.Created($"/blogs/{blogId}/content/{createdBlock.Id}", createdBlock);
+})
+.WithName("AddBlogContentBlock");
 
 app.Run();

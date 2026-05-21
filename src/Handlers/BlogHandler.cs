@@ -16,5 +16,15 @@ namespace myprofile_backend.Handlers
         {
             return await _blogService.GetBlogsWithAuthorAsync(pageNumber, pageSize);
         }
+
+        public async Task<BlogDto> HandleCreateBlogAsync(BlogDto blogDto)
+        {
+            return await _blogService.CreateBlogAsync(blogDto);
+        }
+
+        public async Task<BlogContentBlockDto> HandleAddContentBlockAsync(BlogContentBlockDto contentBlockDto)
+        {
+            return await _blogService.AddContentBlockAsync(contentBlockDto);
+        }
     }
 }
