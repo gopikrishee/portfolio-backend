@@ -1,0 +1,8 @@
+{
+  "name": "ASP.NET Core Portfolio Backend",
+  "description": "ASP.NET Core 10.0 Web API service for portfolio and blogs with Entity Framework Core",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
