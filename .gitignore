@@ -1,0 +1,8 @@
+bin/
+obj/
+node_modules/
+dist/
+.dotnet/
+.env
+.DS_Store
+bun.lock
