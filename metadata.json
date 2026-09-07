@@ -1,6 +1,6 @@
 {
   "name": "ASP.NET Core Portfolio Backend",
-  "description": "Express.js RESTful Web API backend connected to Google Sheets database, serving portfolio user profiles and blog endpoints.",
+  "description": "Express.js RESTful Web API backend connected to Google Sheets database with user profiles, paginated blogs overview, and dynamic multi-block blog details POST API.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
