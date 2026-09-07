@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "./start.sh",
-    "build": "./build.sh",
-    "start": "./start.sh"
+    "dev": "bash ./start.sh",
+    "build": "bash ./build.sh",
+    "start": "bash ./start.sh"
   }
 }
