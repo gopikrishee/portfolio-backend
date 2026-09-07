@@ -11,3 +11,4 @@ node_modules
 .dotnet
 obj
 bun.lock
+data/
