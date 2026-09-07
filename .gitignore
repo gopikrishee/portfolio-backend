@@ -6,3 +6,8 @@ dist/
 .env
 .DS_Store
 bun.lock
+dist
+node_modules
+.dotnet
+obj
+bun.lock
