@@ -119,6 +119,7 @@ export interface CreateBlogInput {
   authorId?: string;
   status?: string;
   accessToken?: string; // Optional Google Sheets OAuth access token
+  webhookUrl?: string; // Optional Google Sheets Webhook URL override
 }
 
 export interface CreateBlogResponse {

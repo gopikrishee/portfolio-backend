@@ -187,12 +187,17 @@ export class BlogService {
    * Create a new blog post
    * Stores overview in "blogs" and complete details in "blog_details"
    */
-  async createBlog(input: CreateBlogInput, explicitAccessToken?: string): Promise<CreateBlogResponse> {
+  async createBlog(
+    input: CreateBlogInput,
+    explicitAccessToken?: string,
+    explicitWebhookUrl?: string
+  ): Promise<CreateBlogResponse> {
     if (!input.title || typeof input.title !== 'string' || !input.title.trim()) {
       throw new Error('Title is required and must be a non-empty string');
     }
 
     const token = explicitAccessToken || input.accessToken;
+    const webhookUrl = explicitWebhookUrl || input.webhookUrl;
 
     const title = input.title.trim();
     const subtitle = (input.subtitle || input.subtile || '').trim();
@@ -340,7 +345,7 @@ export class BlogService {
     };
 
     // 3. Save to Google Sheets service (Google Sheets API v4 + Local persistence)
-    const syncResult = await sheetsService.saveBlog(blogOverview, blogDetails, token);
+    const syncResult = await sheetsService.saveBlog(blogOverview, blogDetails, token, webhookUrl);
 
     return {
       message: 'Blog created successfully',

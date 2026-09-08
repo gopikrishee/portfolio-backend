@@ -387,7 +387,8 @@ export class GoogleSheetsService {
   async saveBlog(
     blog: BlogDto,
     details: BlogDetailsDto,
-    token?: string
+    token?: string,
+    webhookOverride?: string
   ): Promise<{
     syncedToSheets: boolean;
     sheetsSyncDetails: {
@@ -411,13 +412,17 @@ export class GoogleSheetsService {
     }
 
     const effectiveToken = token || this.getAccessToken();
+    const effectiveWebhookUrl = (webhookOverride && isValidHttpUrl(webhookOverride))
+      ? webhookOverride.trim()
+      : getValidWebhookUrl();
+
     let syncedToSheets = false;
     let blogsAppended = false;
     let blogDetailsAppended = false;
     let syncError: string | undefined;
-    let note = 'Saved successfully to backend storage.';
+    let note = '';
 
-    // 2. Direct write to Google Sheets Workbook (1qgh0-fu8vpqufF_MK2W1-s_kEWaVidGqfFiOzc3XUNM)
+    // Strategy A: Direct write to Google Sheets via OAuth Access Token (Sheets API v4)
     if (effectiveToken) {
       const blogRow = [
         blog.id,
@@ -476,78 +481,78 @@ export class GoogleSheetsService {
         syncedToSheets = true;
         note = `Successfully saved and appended data directly to Google Workbook ${this.spreadsheetId} in sheets "blogs" (overview) and "blog_details" (complete details).`;
       } else {
+        syncedToSheets = false;
         syncError = blogsRes.error || detailsRes.error;
-        note = `Saved in backend. Google Sheets write: blogs=${blogsAppended ? 'ok' : 'failed'}, blog_details=${blogDetailsAppended ? 'ok' : 'failed'}. ${syncError || ''}`;
+        note = `Saved to backend storage, but Google Sheets API write failed: blogs=${blogsAppended ? 'ok' : 'failed'}, blog_details=${blogDetailsAppended ? 'ok' : 'failed'}. ${syncError || ''}`;
       }
-    } else {
-      // 3. Attempt Google Sheets Webhook sync if a valid HTTP/HTTPS webhook URL is configured
-      const webhookUrl = getValidWebhookUrl();
-      if (webhookUrl) {
-        try {
-          const payload = {
-            action: 'create_blog',
-            spreadsheet_id: this.spreadsheetId,
-            blog_overview: {
-              id: blog.id,
-              author_id: blog.userId,
-              title: blog.title,
-              slug: blog.slug,
-              excerpt: blog.excerpt,
-              cover_image_url: blog.coverImageUrl || '',
-              status: blog.status,
-              tags: blog.tags,
-              view_count: blog.viewCount,
-              published_at: blog.publishedAt,
-              created_at: blog.createdAt,
-              updated_at: blog.updatedAt
-            },
-            blog_details: {
-              id: details.id,
-              blog_id: details.blogId,
-              title: details.title,
-              subtitle: details.subtitle,
-              tags: details.tags,
-              textcontents: details.textcontents,
-              blockquote: details.blockquote,
-              codesnippet: details.codesnippet,
-              content_blocks: details.contentBlocks,
-              author_id: details.authorId,
-              created_at: details.createdAt,
-              updated_at: details.updatedAt
-            }
-          };
-
-          const response = await fetch(webhookUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          });
-
-          if (response.ok) {
-            syncedToSheets = true;
-            blogsAppended = true;
-            blogDetailsAppended = true;
-            note = `Saved and synchronized directly with Google Sheets workbook ${this.spreadsheetId} via Webhook`;
-            console.log('[GoogleSheetsService] Successfully synced to Google Sheets webhook');
-          } else {
-            syncedToSheets = true;
-            blogsAppended = true;
-            blogDetailsAppended = true;
-            note = `Saved to backend for public Google Workbook ${this.spreadsheetId} (Webhook returned status ${response.status}).`;
+    } else if (effectiveWebhookUrl) {
+      // Strategy B: Google Sheets Apps Script Webhook (enables unauthenticated public workbook sync)
+      try {
+        const payload = {
+          action: 'create_blog',
+          spreadsheet_id: this.spreadsheetId,
+          blog_overview: {
+            id: blog.id,
+            author_id: blog.userId,
+            title: blog.title,
+            slug: blog.slug,
+            excerpt: blog.excerpt,
+            cover_image_url: blog.coverImageUrl || '',
+            status: blog.status,
+            tags: blog.tags,
+            view_count: blog.viewCount,
+            published_at: blog.publishedAt,
+            created_at: blog.createdAt,
+            updated_at: blog.updatedAt
+          },
+          blog_details: {
+            id: details.id,
+            blog_id: details.blogId,
+            title: details.title,
+            subtitle: details.subtitle,
+            tags: details.tags,
+            textcontents: details.textcontents,
+            blockquote: details.blockquote,
+            codesnippet: details.codesnippet,
+            content_blocks: details.contentBlocks,
+            author_id: details.authorId,
+            created_at: details.createdAt,
+            updated_at: details.updatedAt
           }
-        } catch (err: any) {
-          console.error('[GoogleSheetsService] Webhook sync failed:', err);
+        };
+
+        const response = await fetch(effectiveWebhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (response.ok) {
           syncedToSheets = true;
           blogsAppended = true;
           blogDetailsAppended = true;
-          note = `Saved to backend for public Google Workbook ${this.spreadsheetId} (Webhook: ${err.message}).`;
+          note = `Successfully synced directly to Google Sheets workbook ${this.spreadsheetId} via Apps Script Webhook (both "blogs" and "blog_details" updated).`;
+        } else {
+          syncedToSheets = false;
+          blogsAppended = false;
+          blogDetailsAppended = false;
+          syncError = `Webhook returned HTTP ${response.status}`;
+          note = `Saved locally in backend. Google Sheets Webhook returned status ${response.status}.`;
         }
-      } else {
-        syncedToSheets = true;
-        blogsAppended = true;
-        blogDetailsAppended = true;
-        note = `Saved successfully! Overview recorded for sheet "blogs" and complete dynamic details recorded for sheet "blog_details" in public Google Workbook ${this.spreadsheetId}.`;
+      } catch (err: any) {
+        syncedToSheets = false;
+        blogsAppended = false;
+        blogDetailsAppended = false;
+        syncError = err.message || String(err);
+        note = `Saved locally in backend. Google Sheets Webhook connection error: ${syncError}.`;
       }
+    } else {
+      // Strategy C: Saved to backend locally, but Google Workbook sync is pending connection
+      syncedToSheets = false;
+      blogsAppended = false;
+      blogDetailsAppended = false;
+      syncError = 'No Google OAuth token or Google Sheets Webhook URL configured';
+      note = `Saved locally in backend. Note: Google Sheets REST API requires authentication (OAuth) or an Apps Script Webhook for programmatic writes. Public link "edit access" applies to web browsers, not anonymous REST API calls. Deploy the 1-minute Apps Script Webhook to write to your workbook without login.`;
     }
 
     return {

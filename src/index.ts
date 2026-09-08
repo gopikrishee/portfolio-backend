@@ -192,7 +192,13 @@ const handleCreateBlog = async (req: Request, res: Response, next: NextFunction)
     const queryToken = (req.query?.accessToken as string) || undefined;
     const accessToken = bearerToken || customHeaderToken || bodyToken || queryToken;
 
-    const result = await blogService.createBlog(input, accessToken);
+    // Extract Google Sheets Webhook URL if provided
+    const headerWebhook = (req.headers['x-sheets-webhook-url'] as string) || undefined;
+    const bodyWebhook = (req.body?.webhookUrl as string) || undefined;
+    const queryWebhook = (req.query?.webhookUrl as string) || undefined;
+    const webhookUrl = headerWebhook || bodyWebhook || queryWebhook;
+
+    const result = await blogService.createBlog(input, accessToken, webhookUrl);
     res.status(201).json(result);
   } catch (error: any) {
     console.error('[Create Blog Error]', error);
@@ -704,6 +710,12 @@ app.get('/', (req: Request, res: Response) => {
       border: 1px solid rgba(16, 185, 129, 0.3);
       color: #34d399;
     }
+    .sync-status-box.warning {
+      display: block;
+      background: rgba(245, 158, 11, 0.1);
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      color: #fcd34d;
+    }
     .sync-status-box.error {
       display: block;
       background: rgba(239, 68, 68, 0.1);
@@ -750,9 +762,9 @@ app.get('/', (req: Request, res: Response) => {
     </header>
 
     <div class="tabs">
-      <button class="tab-btn active" onclick="switchTab('tab-create')">Create Blog (POST API Tester)</button>
-      <button class="tab-btn" onclick="switchTab('tab-endpoints')">API Endpoints (GET / POST)</button>
-      <button class="tab-btn" onclick="switchTab('tab-sheet-guide')">Google Sheets Architecture</button>
+      <button class="tab-btn active" data-tab="tab-create" onclick="switchTab('tab-create')">Create Blog (POST API Tester)</button>
+      <button class="tab-btn" data-tab="tab-endpoints" onclick="switchTab('tab-endpoints')">API Endpoints (GET / POST)</button>
+      <button class="tab-btn" data-tab="tab-sheet-guide" onclick="switchTab('tab-sheet-guide')">Google Sheets Architecture</button>
     </div>
 
     <!-- TAB 1: Dynamic Blog Creator -->
@@ -910,6 +922,110 @@ app.get('/', (req: Request, res: Response) => {
 
     <!-- TAB 3: Architecture Guide -->
     <div id="tab-sheet-guide" class="tab-pane">
+      <!-- Live Sync Setup Callout -->
+      <div class="form-card" style="margin-bottom: 1.5rem; border-left: 3px solid #f59e0b;">
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 0.5rem;">
+          <span style="font-weight: 700; color: #fbbf24; font-size: 1.05rem;">Direct Google Sheets Sync & Auto-Creating "blog_details"</span>
+        </div>
+        <p style="color: #cbd5e1; font-size: 0.9rem; line-height: 1.6; margin-bottom: 1rem;">
+          <strong>Why does Google Sheets require a webhook or sign-in?</strong><br/>
+          Even when a Google Sheet is shared with public <em>"Anyone with the link can edit"</em> permissions, Google's official REST API (<code>sheets.googleapis.com</code>) strictly blocks anonymous POST requests (<code style="color:#f87171;">401 UNAUTHENTICATED</code>). The public edit link allows humans in a web browser to edit, but programmatic backend writes require either:
+        </p>
+        <ol style="margin-left: 1.25rem; color: #94a3b8; font-size: 0.88rem; line-height: 1.6; margin-bottom: 1rem;">
+          <li><strong style="color: #38bdf8;">Google Apps Script Web App (Zero sign-in required):</strong> Deploy a 25-line script inside your sheet that auto-creates the <code>blog_details</code> tab and appends to both sheets.</li>
+          <li><strong style="color: #c084fc;">Google OAuth Token:</strong> Pass an authorized Google Bearer token in the <code>Authorization: Bearer &lt;token&gt;</code> request header.</li>
+        </ol>
+
+        <h4 style="color: #fbbf24; margin-top: 1.25rem; margin-bottom: 0.5rem;">1-Minute Setup: Google Apps Script Webhook</h4>
+        <p style="color: #cbd5e1; font-size: 0.88rem; margin-bottom: 0.75rem;">
+          Follow these 3 quick steps in your Google Workbook (<code>${SPREADSHEET_ID}</code>):
+        </p>
+        <ol style="margin-left: 1.25rem; color: #cbd5e1; font-size: 0.85rem; line-height: 1.6; margin-bottom: 1rem;">
+          <li>In your Google Sheet, open menu: <strong>Extensions &rarr; Apps Script</strong>.</li>
+          <li>Delete any code in the editor, paste the script below, and click <strong>Save</strong>.</li>
+          <li>Click <strong>Deploy &rarr; New deployment</strong>, select type: <strong>Web app</strong>, configure:
+            <ul style="margin-left: 1rem; margin-top: 4px; color: #94a3b8;">
+              <li>Execute as: <strong>Me</strong></li>
+              <li>Who has access: <strong>Anyone</strong> (this allows your backend to write without user login)</li>
+            </ul>
+          </li>
+          <li>Copy the <strong>Web app URL</strong> and set it in your environment settings as <code>GOOGLE_SHEETS_WEBHOOK_URL</code>.</li>
+        </ol>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+          <span style="font-size: 0.8rem; font-weight: 600; color: #94a3b8;">Google Apps Script (Code.gs):</span>
+          <button type="button" class="btn" style="font-size: 0.75rem; padding: 4px 10px;" onclick="copyAppsScriptCode()">Copy Script to Clipboard</button>
+        </div>
+        <pre id="appsScriptCode" style="background: #090d16; padding: 1rem; border-radius: 0.375rem; font-size: 0.8rem; overflow-x: auto; color: #a5b4fc; max-height: 320px;"><code>function doPost(e) {
+  try {
+    var data = JSON.parse(e.postData.contents);
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+    // 1. Ensure sheet "blogs" exists and append
+    var blogsSheet = ss.getSheetByName("blogs");
+    if (!blogsSheet) {
+      blogsSheet = ss.insertSheet("blogs");
+      blogsSheet.appendRow([
+        "id", "author_id", "title", "slug", "excerpt",
+        "cover_image_url", "status", "tags", "view_count",
+        "published_at", "created_at", "updated_at"
+      ]);
+    }
+    var b = data.blog_overview;
+    blogsSheet.appendRow([
+      b.id,
+      b.author_id,
+      b.title,
+      b.slug,
+      b.excerpt,
+      b.cover_image_url || "",
+      b.status,
+      JSON.stringify(b.tags),
+      b.view_count || 0,
+      b.published_at,
+      b.created_at,
+      b.updated_at
+    ]);
+
+    // 2. Ensure sheet "blog_details" exists and append
+    var detailsSheet = ss.getSheetByName("blog_details");
+    if (!detailsSheet) {
+      detailsSheet = ss.insertSheet("blog_details");
+      detailsSheet.appendRow([
+        "id", "blog_id", "title", "subtitle", "tags",
+        "textcontents", "blockquote", "codesnippet",
+        "content_blocks", "author_id", "created_at", "updated_at"
+      ]);
+    }
+    var d = data.blog_details;
+    detailsSheet.appendRow([
+      d.id,
+      d.blog_id,
+      d.title,
+      d.subtitle || "",
+      JSON.stringify(d.tags),
+      JSON.stringify(d.textcontents),
+      JSON.stringify(d.blockquote),
+      JSON.stringify(d.codesnippet),
+      JSON.stringify(d.content_blocks),
+      d.author_id,
+      d.created_at,
+      d.updated_at
+    ]);
+
+    return ContentService.createTextOutput(JSON.stringify({
+      status: "success",
+      message: "Successfully recorded in blogs and blog_details"
+    })).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({
+      status: "error",
+      error: err.toString()
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}</code></pre>
+      </div>
+
       <div class="form-card">
         <h3 style="margin-bottom: 0.75rem; font-size: 1.15rem;">Two-Tier Google Sheets Schema Design</h3>
         <p style="color: var(--muted); margin-bottom: 1.25rem;">
@@ -937,10 +1053,19 @@ app.get('/', (req: Request, res: Response) => {
 
   <script>
     function switchTab(tabId) {
-      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => {
+        b.classList.remove('active');
+        if (b.getAttribute('data-tab') === tabId || (b.getAttribute('onclick') && b.getAttribute('onclick').includes(tabId))) {
+          b.classList.add('active');
+        }
+      });
       document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
-      event.target.classList.add('active');
-      document.getElementById(tabId).classList.add('active');
+      const targetPane = document.getElementById(tabId);
+      if (targetPane) targetPane.classList.add('active');
+    }
+
+    function goToSheetGuide() {
+      switchTab('tab-sheet-guide');
     }
 
     let blockCounter = 0;
@@ -1047,25 +1172,39 @@ app.get('/', (req: Request, res: Response) => {
 
         if (data.googleSheetsSync && data.googleSheetsSync.syncedToGoogleSheets) {
           feedbackBox.className = 'sync-status-box success';
-          feedbackBox.innerHTML = '<strong>Successfully Saved to Google Workbook!</strong><br/>' +
-            '&bull; Overview saved to sheet: <strong>blogs</strong><br/>' +
-            '&bull; Complete dynamic inputs saved to sheet: <strong>blog_details</strong><br/>' +
+          feedbackBox.style.display = 'block';
+          feedbackBox.innerHTML = '<strong>Successfully Appended to Google Workbook!</strong><br/>' +
+            '<div style="margin-top:4px;">&bull; Overview appended to sheet: <strong>blogs</strong><br/>' +
+            '&bull; Complete dynamic inputs appended to sheet: <strong>blog_details</strong></div>' +
             '<a href="${sheetUrl}" target="_blank" style="display:inline-block; margin-top:8px; font-weight:600; color:#38bdf8;">Open Google Workbook (${SPREADSHEET_ID}) &rarr;</a>';
         } else {
-          feedbackBox.className = 'sync-status-box success';
+          feedbackBox.className = 'sync-status-box warning';
           feedbackBox.style.display = 'block';
-          feedbackBox.innerHTML = '<strong>' + (data.message || 'Blog saved in backend') + '</strong><br/>' +
-            '<span style="font-size:0.85rem; color:#94a3b8;">' + (data.googleSheetsSync?.syncNote || '') + '</span><br/>' +
-            '<a href="${sheetUrl}" target="_blank" style="display:inline-block; margin-top:8px; font-weight:600; color:#38bdf8;">Open Google Workbook (${SPREADSHEET_ID}) &rarr;</a>';
+          feedbackBox.innerHTML = '<strong>Saved in Backend API &bull; Google Sheets Direct Sync Pending</strong><br/>' +
+            '<div style="font-size:0.85rem; color:#fde68a; margin: 6px 0;">' + (data.googleSheetsSync?.syncNote || 'Google REST API requires authorization or an Apps Script Webhook for programmatic writes.') + '</div>' +
+            '<div style="margin-top:8px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">' +
+            '<button type="button" class="btn" onclick="goToSheetGuide()" style="font-size:0.75rem; padding:4px 10px; background:#f59e0b; color:#18181b; font-weight:600;">View 1-Minute Apps Script Setup Guide &rarr;</button>' +
+            '<a href="${sheetUrl}" target="_blank" style="font-size:0.8rem; font-weight:600; color:#38bdf8;">Open Google Workbook &nearr;</a>' +
+            '</div>';
         }
       } catch (err) {
         submitCode.textContent = 'Error: ' + err.message;
         feedbackBox.className = 'sync-status-box error';
+        feedbackBox.style.display = 'block';
         feedbackBox.innerHTML = '<strong>Error saving blog:</strong> ' + err.message;
       } finally {
         submitBtn.disabled = false;
         submitBtn.textContent = 'Publish & Save to Backend';
       }
+    }
+
+    function copyAppsScriptCode() {
+      const code = document.getElementById('appsScriptCode').innerText;
+      navigator.clipboard.writeText(code).then(() => {
+        alert('Apps Script code copied to clipboard! Paste it into Extensions > Apps Script in your Google Sheet.');
+      }).catch(() => {
+        prompt('Copy this Apps Script code:', code);
+      });
     }
 
     async function testEndpoint(url, targetId) {
