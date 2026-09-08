@@ -118,6 +118,7 @@ export interface CreateBlogInput {
   userId?: string;
   authorId?: string;
   status?: string;
+  accessToken?: string; // Optional Google Sheets OAuth access token
 }
 
 export interface CreateBlogResponse {
@@ -125,9 +126,15 @@ export interface CreateBlogResponse {
   blog: BlogDto;
   blogDetails: BlogDetailsDto;
   googleSheetsSync: {
+    spreadsheetId: string;
     blogDetailsSheet: string;
     blogsSheet: string;
     syncedToGoogleSheets: boolean;
     syncNote?: string;
+    details?: {
+      blogsAppended: boolean;
+      blogDetailsAppended: boolean;
+      error?: string;
+    };
   };
 }

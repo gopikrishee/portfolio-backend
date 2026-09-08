@@ -187,10 +187,12 @@ export class BlogService {
    * Create a new blog post
    * Stores overview in "blogs" and complete details in "blog_details"
    */
-  async createBlog(input: CreateBlogInput): Promise<CreateBlogResponse> {
+  async createBlog(input: CreateBlogInput, explicitAccessToken?: string): Promise<CreateBlogResponse> {
     if (!input.title || typeof input.title !== 'string' || !input.title.trim()) {
       throw new Error('Title is required and must be a non-empty string');
     }
+
+    const token = explicitAccessToken || input.accessToken;
 
     const title = input.title.trim();
     const subtitle = (input.subtitle || input.subtile || '').trim();
@@ -337,18 +339,20 @@ export class BlogService {
       updatedAt: now
     };
 
-    // 3. Save to Google Sheets service (Local persistence + Google Sheets Webhook sync)
-    const syncResult = await sheetsService.saveBlog(blogOverview, blogDetails);
+    // 3. Save to Google Sheets service (Google Sheets API v4 + Local persistence)
+    const syncResult = await sheetsService.saveBlog(blogOverview, blogDetails, token);
 
     return {
       message: 'Blog created successfully',
       blog: blogOverview,
       blogDetails,
       googleSheetsSync: {
+        spreadsheetId: sheetsService.getSpreadsheetId(),
         blogsSheet: 'blogs (Overview preserved)',
         blogDetailsSheet: 'blog_details (Complete details saved)',
         syncedToGoogleSheets: syncResult.syncedToSheets,
-        syncNote: syncResult.note
+        syncNote: syncResult.note,
+        details: syncResult.sheetsSyncDetails
       }
     };
   }

@@ -1,12 +1,14 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import * as fs from 'fs';
+import * as path from 'path';
 import { userService } from './services/userService.js';
 import { blogService } from './services/blogService.js';
 import { sheetsService, SPREADSHEET_ID, GOOGLE_SHEETS_WEBHOOK_URL } from './services/sheetsService.js';
 import { CreateBlogInput } from './types.js';
 
 const app = express();
-const PORT = parseInt(process.env.PORT || '3000', 10);
+const PORT = 3000;
 const HOST = '0.0.0.0';
 
 // Enable CORS for frontend applications
@@ -14,7 +16,7 @@ app.use(
   cors({
     origin: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'x-sheets-webhook'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'x-sheets-webhook', 'x-google-access-token'],
     credentials: true
   })
 );
@@ -182,7 +184,15 @@ const handleCreateBlog = async (req: Request, res: Response, next: NextFunction)
       return;
     }
 
-    const result = await blogService.createBlog(input);
+    // Extract Google OAuth access token if provided
+    const authHeader = req.headers.authorization || '';
+    const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : undefined;
+    const customHeaderToken = (req.headers['x-google-access-token'] as string) || undefined;
+    const bodyToken = (req.body?.accessToken as string) || undefined;
+    const queryToken = (req.query?.accessToken as string) || undefined;
+    const accessToken = bearerToken || customHeaderToken || bodyToken || queryToken;
+
+    const result = await blogService.createBlog(input, accessToken);
     res.status(201).json(result);
   } catch (error: any) {
     console.error('[Create Blog Error]', error);
@@ -196,6 +206,57 @@ const handleCreateBlog = async (req: Request, res: Response, next: NextFunction)
 app.post('/blogs', handleCreateBlog);
 app.post('/blog_details', handleCreateBlog);
 app.post('/api/blogs', handleCreateBlog);
+
+/**
+ * POST /api/auth/token
+ * Register active Google OAuth token for Google Sheets API operations
+ */
+app.post('/api/auth/token', (req: Request, res: Response) => {
+  const { accessToken } = req.body || {};
+  if (!accessToken || typeof accessToken !== 'string') {
+    res.status(400).json({ error: 'accessToken is required and must be a string' });
+    return;
+  }
+  sheetsService.setAccessToken(accessToken);
+  res.json({
+    status: 'ok',
+    message: 'Google Sheets OAuth access token registered for active session',
+    spreadsheetId: sheetsService.getSpreadsheetId()
+  });
+});
+
+/**
+ * GET /api/auth/status
+ * Check if the backend has an active Google OAuth token
+ */
+app.get('/api/auth/status', (req: Request, res: Response) => {
+  const hasToken = Boolean(sheetsService.getAccessToken());
+  res.json({
+    hasActiveGoogleToken: hasToken,
+    spreadsheetId: sheetsService.getSpreadsheetId(),
+    spreadsheetUrl: sheetsService.getSpreadsheetUrl()
+  });
+});
+
+/**
+ * GET /api/firebase-config
+ * Serve client Firebase config for seamless Google Auth popup
+ */
+app.get('/api/firebase-config', (req: Request, res: Response) => {
+  try {
+    const configPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      res.json(config);
+      return;
+    }
+  } catch (e) {
+    console.warn('Could not read firebase-applet-config.json', e);
+  }
+  res.json({
+    projectId: process.env.FIREBASE_PROJECT_ID || 'myprofile-2026'
+  });
+});
 
 /**
  * GET /health
@@ -223,7 +284,8 @@ app.get('/health', async (req: Request, res: Response) => {
         blogs: 'Overview of contents (preserved)',
         blog_details: 'Complete input details (dynamic blocks)'
       },
-      webhookConfigured: Boolean(process.env.GOOGLE_SHEETS_WEBHOOK_URL || GOOGLE_SHEETS_WEBHOOK_URL),
+      hasActiveGoogleOAuthToken: Boolean(sheetsService.getAccessToken()),
+      webhookConfigured: Boolean(GOOGLE_SHEETS_WEBHOOK_URL),
       usersLoaded: userCount,
       responseTimeMs: Date.now() - startTime
     },
@@ -556,6 +618,98 @@ app.get('/', (req: Request, res: Response) => {
       color: #cbd5e1;
       max-height: 350px;
     }
+    /* Google Material Button */
+    .gsi-material-button {
+      background-color: #ffffff;
+      border: 1px solid #747775;
+      border-radius: 20px;
+      box-sizing: border-box;
+      color: #1f1f1f;
+      cursor: pointer;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 14px;
+      height: 40px;
+      letter-spacing: 0.25px;
+      outline: none;
+      padding: 0 16px;
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 500;
+      transition: background-color .2s, box-shadow .2s;
+    }
+    .gsi-material-button:hover {
+      background-color: #f8fafc;
+      box-shadow: 0 1px 3px 0 rgba(60, 64, 67, .30), 0 4px 8px 3px rgba(60, 64, 67, .15);
+    }
+    .auth-card {
+      background: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 0.75rem;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .auth-card-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    .user-profile {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .user-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 2px solid var(--primary);
+    }
+    .user-info h4 {
+      font-size: 0.95rem;
+      color: #f8fafc;
+      font-weight: 600;
+    }
+    .user-info p {
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    .auth-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0.25rem 0.6rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    .sync-status-box {
+      margin-top: 1rem;
+      padding: 1rem;
+      border-radius: 0.5rem;
+      font-size: 0.875rem;
+      display: none;
+    }
+    .sync-status-box.success {
+      display: block;
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: #34d399;
+    }
+    .sync-status-box.error {
+      display: block;
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #f87171;
+    }
     .callout {
       background: rgba(56, 189, 248, 0.08);
       border-left: 3px solid var(--primary);
@@ -603,6 +757,29 @@ app.get('/', (req: Request, res: Response) => {
 
     <!-- TAB 1: Dynamic Blog Creator -->
     <div id="tab-create" class="tab-pane active">
+      <!-- Public Workbook Status Banner -->
+      <div class="auth-card" style="border-left: 3px solid #10b981;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+          <div>
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 0.35rem;">
+              <span class="auth-badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3);">
+                <span class="dot" style="background: #10b981;"></span>
+                Public Edit Access &bull; No Sign-in Required
+              </span>
+              <span class="badge" style="margin-bottom: 0;">Secret Key Configured</span>
+            </div>
+            <p style="font-size: 0.85rem; color: var(--muted);">
+              Target Google Workbook: <code>${SPREADSHEET_ID}</code> (loaded from environment secret key <code>GOOGLE_SPREADSHEET_ID</code>). The API is fully accessible without requiring any sign-in.
+            </p>
+          </div>
+          <div>
+            <a href="${sheetUrl}" target="_blank" class="btn" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 500;">
+              Open Google Workbook &nearr;
+            </a>
+          </div>
+        </div>
+      </div>
+
       <div class="callout">
         <strong>Dynamic Content Blocks:</strong> Add any number of <em>textcontents</em>, <em>blockquotes</em>, and <em>codesnippets</em> below. When submitted, the backend saves the overview into <strong>"blogs"</strong> and full details into <strong>"blog_details"</strong>.
       </div>
@@ -636,8 +813,17 @@ app.get('/', (req: Request, res: Response) => {
             <!-- Default dynamic blocks populated initially -->
           </div>
 
+          <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border); border-radius: 0.375rem; padding: 0.75rem 1rem; margin-bottom: 1.25rem; display: flex; align-items: center; gap: 0.75rem;">
+            <input type="checkbox" id="confirmWriteToSheets" checked style="accent-color: var(--primary); width: 18px; height: 18px; cursor: pointer;">
+            <label for="confirmWriteToSheets" style="font-size: 0.85rem; color: #e2e8f0; cursor: pointer;">
+              Save to Google Workbook <strong>${SPREADSHEET_ID}</strong> (Overview &rarr; <code>blogs</code>, Complete Details &rarr; <code>blog_details</code>)
+            </label>
+          </div>
+
           <button type="submit" class="btn-primary" id="submitBtn">Publish & Save to Backend</button>
         </form>
+
+        <div id="syncFeedbackBox" class="sync-status-box"></div>
 
         <div id="submitResult" class="result-box" style="margin-top: 1.5rem; border-radius: 0.5rem; border: 1px solid var(--border);">
           <pre><code id="submitCode">Waiting for submission...</code></pre>
@@ -807,7 +993,7 @@ app.get('/', (req: Request, res: Response) => {
       e.preventDefault();
       const submitBtn = document.getElementById('submitBtn');
       submitBtn.disabled = true;
-      submitBtn.textContent = 'Saving...';
+      submitBtn.textContent = 'Saving to Backend & Sheets...';
 
       const title = document.getElementById('title').value;
       const subtitle = document.getElementById('subtitle').value;
@@ -844,8 +1030,10 @@ app.get('/', (req: Request, res: Response) => {
 
       const resultBox = document.getElementById('submitResult');
       const submitCode = document.getElementById('submitCode');
+      const feedbackBox = document.getElementById('syncFeedbackBox');
+      feedbackBox.style.display = 'none';
       resultBox.classList.add('open');
-      submitCode.textContent = 'Sending POST /blogs with payload:\\n' + JSON.stringify(payload, null, 2);
+      submitCode.textContent = 'Sending POST /blogs with dynamic content payload:\\n' + JSON.stringify(payload, null, 2);
 
       try {
         const res = await fetch('/blogs', {
@@ -856,8 +1044,24 @@ app.get('/', (req: Request, res: Response) => {
 
         const data = await res.json();
         submitCode.textContent = 'Status ' + res.status + '\\n\\n' + JSON.stringify(data, null, 2);
+
+        if (data.googleSheetsSync && data.googleSheetsSync.syncedToGoogleSheets) {
+          feedbackBox.className = 'sync-status-box success';
+          feedbackBox.innerHTML = '<strong>Successfully Saved to Google Workbook!</strong><br/>' +
+            '&bull; Overview saved to sheet: <strong>blogs</strong><br/>' +
+            '&bull; Complete dynamic inputs saved to sheet: <strong>blog_details</strong><br/>' +
+            '<a href="${sheetUrl}" target="_blank" style="display:inline-block; margin-top:8px; font-weight:600; color:#38bdf8;">Open Google Workbook (${SPREADSHEET_ID}) &rarr;</a>';
+        } else {
+          feedbackBox.className = 'sync-status-box success';
+          feedbackBox.style.display = 'block';
+          feedbackBox.innerHTML = '<strong>' + (data.message || 'Blog saved in backend') + '</strong><br/>' +
+            '<span style="font-size:0.85rem; color:#94a3b8;">' + (data.googleSheetsSync?.syncNote || '') + '</span><br/>' +
+            '<a href="${sheetUrl}" target="_blank" style="display:inline-block; margin-top:8px; font-weight:600; color:#38bdf8;">Open Google Workbook (${SPREADSHEET_ID}) &rarr;</a>';
+        }
       } catch (err) {
         submitCode.textContent = 'Error: ' + err.message;
+        feedbackBox.className = 'sync-status-box error';
+        feedbackBox.innerHTML = '<strong>Error saving blog:</strong> ' + err.message;
       } finally {
         submitBtn.disabled = false;
         submitBtn.textContent = 'Publish & Save to Backend';
