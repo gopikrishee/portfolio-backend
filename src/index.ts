@@ -5,7 +5,7 @@ import * as path from 'path';
 import { userService } from './services/userService.js';
 import { blogService } from './services/blogService.js';
 import { sheetsService, SPREADSHEET_ID, GOOGLE_SHEETS_WEBHOOK_URL } from './services/sheetsService.js';
-import { CreateBlogInput } from './types.js';
+import { CreateBlogInput, BlogDto } from './types.js';
 
 const app = express();
 const PORT = 3000;
@@ -80,21 +80,130 @@ app.get('/blogslist', async (req: Request, res: Response, next: NextFunction) =>
   }
 });
 
+function escapeHtml(str: any): string {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function renderBlogsHtml(blogs: BlogDto[], sheetUrl: string): string {
+  const cards = blogs.map((b) => {
+    const tagsHtml = (b.tags || [])
+      .map((t: string) => `<span style="background:rgba(56,189,248,0.12); color:#38bdf8; border:1px solid rgba(56,189,248,0.25); padding:2px 8px; border-radius:9999px; font-size:0.75rem;">${escapeHtml(t)}</span>`)
+      .join(' ');
+
+    const dateStr = b.publishedAt || b.createdAt ? new Date(b.publishedAt || b.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '';
+
+    return `
+    <article style="background:#151c2c; border:1px solid #232f48; border-radius:0.5rem; padding:1.25rem; margin-bottom:1rem;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; margin-bottom:0.5rem;">
+        <h2 style="font-size:1.15rem; font-weight:700; color:#f1f5f9; margin:0;">
+          <a href="/blogs/${escapeHtml(b.id)}/details" style="color:#f1f5f9; text-decoration:none;">${escapeHtml(b.title)}</a>
+        </h2>
+        <span style="font-size:0.75rem; color:#94a3b8; white-space:nowrap;">${escapeHtml(dateStr)}</span>
+      </div>
+      <p style="color:#94a3b8; font-size:0.9rem; margin-bottom:0.75rem; line-height:1.5;">${escapeHtml(b.excerpt || 'Overview of blog content.')}</p>
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          ${tagsHtml}
+        </div>
+        <div style="display:flex; align-items:center; gap:12px; font-size:0.8rem; color:#64748b;">
+          <span>Author: <strong style="color:#cbd5e1;">${escapeHtml(b.userName || 'Author')}</strong></span>
+          <span>Views: <strong style="color:#cbd5e1;">${b.viewCount || 0}</strong></span>
+          <a href="/blogs/${escapeHtml(b.id)}/details" style="color:#38bdf8; text-decoration:none; font-weight:600;">Full Details &rarr;</a>
+        </div>
+      </div>
+    </article>
+    `;
+  }).join('');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Google Sheets Blogs (Live Sheet "blogs")</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #0b0f19;
+      color: #f1f5f9;
+      padding: 2rem 1rem 4rem;
+      margin: 0;
+      line-height: 1.6;
+    }
+    .container { max-width: 960px; margin: 0 auto; }
+    a { color: #38bdf8; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; margin-bottom:1.5rem; padding-bottom:1rem; border-bottom:1px solid #232f48;">
+      <div>
+        <div style="font-size:0.8rem; color:#38bdf8; font-weight:600; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:4px;">
+          Google Sheets Database &bull; Sheet "blogs"
+        </div>
+        <h1 style="font-size:1.75rem; font-weight:700; margin:0;">Live Blogs Feed (${blogs.length} Items)</h1>
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <a href="/" style="background:#1e293b; color:#f1f5f9; text-decoration:none; padding:6px 12px; border-radius:4px; font-size:0.85rem; border:1px solid #334155;">&larr; API Dashboard</a>
+        <a href="/blogs" style="background:#0284c7; color:#fff; text-decoration:none; padding:6px 12px; border-radius:4px; font-size:0.85rem;">Raw JSON API</a>
+        <a href="${sheetUrl}" target="_blank" style="background:#10b981; color:#fff; text-decoration:none; padding:6px 12px; border-radius:4px; font-size:0.85rem;">Open Google Sheet &nearr;</a>
+      </div>
+    </div>
+    <div>
+      ${cards || '<p style="color:#94a3b8; text-align:center; padding:3rem 0;">No blogs found in Google Sheet "blogs".</p>'}
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
 /**
- * GET /blogs
- * Alias for /blogslist
+ * GET /blogs (and /api/blogs)
+ * Displays blogs from "blogs" Google Sheet data.
+ * - Default: returns all blogs from the "blogs" Google Sheet
+ * - Pagination (optional): ?pageNumber=1&pageSize=10
+ * - Real-time cache refresh: ?refresh=true
+ * - Raw Google Sheet row format: ?raw=true
+ * - Standalone visual HTML rendering: ?format=html
  */
-app.get('/blogs', async (req: Request, res: Response, next: NextFunction) => {
+const handleGetBlogs = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const pageNumber = parseInt(req.query.pageNumber as string, 10) || 1;
-    const pageSize = parseInt(req.query.pageSize as string, 10) || 10;
     const forceRefresh = req.query.refresh === 'true';
-    const blogs = await blogService.getBlogsWithAuthor(pageNumber, pageSize, forceRefresh);
+    const isRaw = req.query.raw === 'true';
+
+    // If raw Google Sheet rows are requested
+    if (isRaw) {
+      const rawBlogs = await blogService.getRawBlogs(forceRefresh);
+      res.json(rawBlogs);
+      return;
+    }
+
+    const pageNumber = req.query.pageNumber ? parseInt(req.query.pageNumber as string, 10) : undefined;
+    const pageSize = req.query.pageSize ? parseInt(req.query.pageSize as string, 10) : undefined;
+
+    const blogs = await blogService.getBlogs(pageNumber, pageSize, forceRefresh);
+
+    // If browser/client requested HTML format
+    if (req.query.format === 'html') {
+      const sheetUrl = sheetsService.getSpreadsheetUrl();
+      res.type('html').send(renderBlogsHtml(blogs, sheetUrl));
+      return;
+    }
+
     res.json(blogs);
   } catch (error) {
     next(error);
   }
-});
+};
+
+app.get('/blogs', handleGetBlogs);
+app.get('/api/blogs', handleGetBlogs);
 
 /**
  * GET /blogs/:id
@@ -763,6 +872,7 @@ app.get('/', (req: Request, res: Response) => {
 
     <div class="tabs">
       <button class="tab-btn active" data-tab="tab-create" onclick="switchTab('tab-create')">Create Blog (POST API Tester)</button>
+      <button class="tab-btn" data-tab="tab-sheet-blogs" onclick="switchTab('tab-sheet-blogs')">Google Sheet Blogs (GET /blogs)</button>
       <button class="tab-btn" data-tab="tab-endpoints" onclick="switchTab('tab-endpoints')">API Endpoints (GET / POST)</button>
       <button class="tab-btn" data-tab="tab-sheet-guide" onclick="switchTab('tab-sheet-guide')">Google Sheets Architecture</button>
     </div>
@@ -843,9 +953,65 @@ app.get('/', (req: Request, res: Response) => {
       </div>
     </div>
 
+    <!-- TAB: Google Sheet Blogs (Live Feed) -->
+    <div id="tab-sheet-blogs" class="tab-pane">
+      <div class="auth-card" style="border-left: 3px solid #38bdf8; margin-bottom: 1.5rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+          <div>
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 0.35rem;">
+              <span class="auth-badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);">
+                <span class="dot" style="background: #38bdf8;"></span>
+                Live Google Sheet "blogs"
+              </span>
+              <span class="badge" id="sheetBlogsCountBadge" style="margin-bottom: 0;">Loading blogs...</span>
+            </div>
+            <p style="font-size: 0.85rem; color: var(--muted);">
+              Data fetched live via <code>GET /blogs</code> from Google Sheets tab <strong>"blogs"</strong> (Spreadsheet ID: <code>${SPREADSHEET_ID}</code>).
+            </p>
+          </div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button type="button" class="btn" onclick="loadSheetBlogs(true)" style="background: #1e293b; color: #38bdf8; border: 1px solid #38bdf8; font-weight: 600;">
+              &orarr; Refresh from Sheet
+            </button>
+            <a href="/blogs" target="_blank" class="btn" style="text-decoration: none;">
+              Raw JSON (/blogs) &nearr;
+            </a>
+            <a href="/blogs?format=html" target="_blank" class="btn" style="text-decoration: none;">
+              HTML View (/blogs?format=html) &nearr;
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <div id="sheetBlogsList">
+        <div style="text-align: center; padding: 3rem 1rem; color: var(--muted); background: var(--card); border-radius: 0.5rem; border: 1px solid var(--border);">
+          Loading blogs from Google Sheet "blogs"...
+        </div>
+      </div>
+    </div>
+
     <!-- TAB 2: Endpoints -->
     <div id="tab-endpoints" class="tab-pane">
       <div class="endpoint-list">
+        <!-- GET /blogs -->
+        <div class="endpoint">
+          <div class="endpoint-header">
+            <div class="left">
+              <span class="method get">GET</span>
+              <span class="path">/blogs</span>
+              <span class="desc">&mdash; Displays all blogs from "blogs" Google Sheet data (supports ?refresh=true, ?raw=true, ?pageNumber=1&amp;pageSize=10, ?format=html)</span>
+            </div>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+              <button class="btn" onclick="testEndpoint('/blogs', 'res-blogs-main')">Run Query</button>
+              <a href="/blogs" target="_blank" class="btn" style="text-decoration: none; display: inline-flex; align-items: center;">Raw JSON &nearr;</a>
+              <a href="/blogs?format=html" target="_blank" class="btn" style="text-decoration: none; display: inline-flex; align-items: center;">HTML View &nearr;</a>
+            </div>
+          </div>
+          <div class="result-box" id="res-blogs-main">
+            <pre><code>Loading...</code></pre>
+          </div>
+        </div>
+
         <!-- POST /blogs -->
         <div class="endpoint">
           <div class="endpoint-header">
@@ -1062,6 +1228,61 @@ app.get('/', (req: Request, res: Response) => {
       document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
       const targetPane = document.getElementById(tabId);
       if (targetPane) targetPane.classList.add('active');
+
+      if (tabId === 'tab-sheet-blogs' && !blogsLoadedOnce) {
+        loadSheetBlogs();
+      }
+    }
+
+    let blogsLoadedOnce = false;
+
+    async function loadSheetBlogs(forceRefresh = false) {
+      const container = document.getElementById('sheetBlogsList');
+      const countBadge = document.getElementById('sheetBlogsCountBadge');
+      if (forceRefresh) {
+        countBadge.textContent = 'Refreshing...';
+        container.innerHTML = '<div style="text-align: center; padding: 2.5rem; color: var(--muted);">Fetching live rows directly from Google Sheet "blogs"...</div>';
+      }
+      try {
+        const url = forceRefresh ? '/blogs?refresh=true' : '/blogs';
+        const res = await fetch(url);
+        const blogs = await res.json();
+        blogsLoadedOnce = true;
+
+        if (!Array.isArray(blogs)) {
+          throw new Error(blogs.message || 'Unexpected response format');
+        }
+
+        countBadge.textContent = blogs.length + ' Blogs Loaded';
+
+        if (blogs.length === 0) {
+          container.innerHTML = '<div style="text-align: center; padding: 2.5rem; color: var(--muted); background: var(--card); border-radius: 0.5rem; border: 1px solid var(--border);">No blogs found in Google Sheet "blogs".</div>';
+          return;
+        }
+
+        container.innerHTML = blogs.map(b => {
+          const tags = (b.tags || []).map(t => '<span class="badge" style="margin: 0; font-size: 0.7rem; padding: 2px 8px; background: rgba(56,189,248,0.12); color: var(--primary); border: 1px solid rgba(56,189,248,0.25);">' + (t || '') + '</span>').join(' ');
+          const dateStr = b.publishedAt || b.createdAt ? new Date(b.publishedAt || b.createdAt).toLocaleDateString() : '';
+          return '<div class="endpoint" style="margin-bottom: 1rem; padding: 1.25rem; background: var(--card); border: 1px solid var(--border); border-radius: 0.5rem;">' +
+            '<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; margin-bottom: 0.5rem;">' +
+              '<h3 style="font-size: 1.15rem; font-weight: 700; color: var(--text); margin: 0;">' + (b.title || 'Untitled') + '</h3>' +
+              '<span style="font-size: 0.75rem; color: var(--muted); white-space: nowrap;">' + dateStr + '</span>' +
+            '</div>' +
+            '<p style="color: var(--muted); font-size: 0.9rem; margin-bottom: 0.85rem; line-height: 1.5;">' + (b.excerpt || 'Overview of blog content.') + '</p>' +
+            '<div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">' +
+              '<div style="display: flex; gap: 6px; flex-wrap: wrap;">' + tags + '</div>' +
+              '<div style="display: flex; align-items: center; gap: 12px; font-size: 0.8rem; color: var(--muted);">' +
+                '<span>Author: <strong style="color: var(--text);">' + (b.userName || 'Author') + '</strong></span>' +
+                '<span>Views: <strong style="color: var(--text);">' + (b.viewCount || 0) + '</strong></span>' +
+                '<a href="/blogs/' + encodeURIComponent(b.id) + '/details" target="_blank" class="btn" style="padding: 3px 8px; font-size: 0.75rem; text-decoration: none;">View Details &nearr;</a>' +
+              '</div>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+      } catch (err) {
+        countBadge.textContent = 'Error loading';
+        container.innerHTML = '<div style="color: var(--danger); padding: 1.5rem; background: rgba(239, 68, 68, 0.1); border: 1px solid var(--danger); border-radius: 0.5rem;"><strong>Failed to load blogs:</strong> ' + err.message + '</div>';
+      }
     }
 
     function goToSheetGuide() {

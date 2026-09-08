@@ -22,19 +22,27 @@ function slugify(text: string): string {
 }
 
 export class BlogService {
-  async getBlogsWithAuthor(pageNumber: number = 1, pageSize: number = 10, forceRefresh: boolean = false): Promise<BlogDto[]> {
+  /**
+   * Get all blogs from the "blogs" Google Sheet data, with optional pagination.
+   * If pageSize is not provided, returns all blogs from the sheet.
+   */
+  async getBlogs(
+    pageNumber?: number,
+    pageSize?: number,
+    forceRefresh: boolean = false
+  ): Promise<BlogDto[]> {
     try {
       const [rawBlogs, users] = await Promise.all([
         sheetsService.getBlogs(forceRefresh),
         userService.getAllUsers(false)
       ]);
 
-      console.log(`[BlogService] rawBlogs fetched count: ${rawBlogs.length}, users count: ${users.length}`);
+      console.log(`[BlogService] rawBlogs fetched from Google Sheet "blogs": ${rawBlogs.length}, users count: ${users.length}`);
 
       const userMap = new Map<string, string>();
       users.forEach((u) => userMap.set(u.userId, u.userName));
 
-      // Parse and format raw blogs
+      // Parse and format raw blogs from the Google Sheet
       const blogs: BlogDto[] = rawBlogs.map((b: RawBlogRow) => {
         let tags: string[] = [];
         if (typeof b.tags === 'string') {
@@ -50,37 +58,64 @@ export class BlogService {
         const userId = b.author_id || (b as any).userId || '28fbb257-ac9e-4b22-b294-cf341ec6db04';
         const userName = userMap.get(userId) || 'GOPI KRISHAN S';
         const viewCount = typeof b.view_count === 'number' ? b.view_count : parseInt(String(b.view_count || 0), 10) || 0;
+        const publishedAt = b.published_at || null;
+        const createdAt = b.created_at || new Date().toISOString();
+        const updatedAt = b.updated_at || new Date().toISOString();
+        const coverImageUrl = b.cover_image_url || null;
 
         return {
           id: b.id || '',
           userId,
+          author_id: userId,
           userName,
           title: b.title || '',
           slug: b.slug || slugify(b.title || 'untitled'),
           excerpt: b.excerpt || null,
-          coverImageUrl: b.cover_image_url || null,
+          coverImageUrl,
+          cover_image_url: coverImageUrl,
           status: b.status || 'published',
           tags,
           viewCount,
-          publishedAt: b.published_at || null,
-          createdAt: b.created_at || new Date().toISOString(),
-          updatedAt: b.updated_at || new Date().toISOString()
+          view_count: viewCount,
+          publishedAt,
+          published_at: publishedAt,
+          createdAt,
+          created_at: createdAt,
+          updatedAt,
+          updated_at: updatedAt
         };
       });
 
       // Sort by createdAt descending
       blogs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-      // Pagination
-      const pNumber = Math.max(1, pageNumber || 1);
-      const pSize = Math.max(1, pageSize || 10);
-      const skip = (pNumber - 1) * pSize;
+      // If pageSize is specified, apply pagination
+      if (pageSize && pageSize > 0) {
+        const pNumber = Math.max(1, pageNumber || 1);
+        const skip = (pNumber - 1) * pageSize;
+        return blogs.slice(skip, skip + pageSize);
+      }
 
-      return blogs.slice(skip, skip + pSize);
+      // Default: return all blogs from "blogs" Google Sheet
+      return blogs;
     } catch (error) {
       console.error('[BlogService] Error fetching blogs from Google Sheets:', error);
       return [];
     }
+  }
+
+  /**
+   * Get raw rows from "blogs" Google Sheet directly
+   */
+  async getRawBlogs(forceRefresh: boolean = false): Promise<RawBlogRow[]> {
+    return sheetsService.getBlogs(forceRefresh);
+  }
+
+  /**
+   * Paginated blog list (defaults to 10 per page)
+   */
+  async getBlogsWithAuthor(pageNumber: number = 1, pageSize: number = 10, forceRefresh: boolean = false): Promise<BlogDto[]> {
+    return this.getBlogs(pageNumber, pageSize, forceRefresh);
   }
 
   async getBlogById(id: string): Promise<BlogDto | null> {

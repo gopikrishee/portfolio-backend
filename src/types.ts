@@ -47,17 +47,23 @@ export interface ContentBlock {
 export interface BlogDto {
   id: string;
   userId: string;
+  author_id?: string;
   userName?: string;
   title: string;
   slug: string;
   excerpt: string | null;
   coverImageUrl: string | null;
+  cover_image_url?: string | null;
   status: string;
   tags: string[];
   viewCount: number;
+  view_count?: number;
   publishedAt: string | null;
+  published_at?: string | null;
   createdAt: string;
+  created_at?: string;
   updatedAt: string;
+  updated_at?: string;
 }
 
 export interface BlogDetailsDto {
